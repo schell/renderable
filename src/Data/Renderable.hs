@@ -1,10 +1,8 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Renderable where
 
 import Prelude hiding (lookup)
@@ -17,9 +15,17 @@ import Data.List (intercalate)
 import qualified Data.IntSet as S
 import qualified Data.IntMap as IM
 import GHC.Stack
+
 --------------------------------------------------------------------------------
--- Other Renderables
+-- Decomposable Instances
 --------------------------------------------------------------------------------
+-- | Any element is decomposable by returning a list consisting of itself.
+instance Decomposable (Element m r t) m r t where
+    decompose e = [e]
+--------------------------------------------------------------------------------
+-- Renderable Instances
+--------------------------------------------------------------------------------
+-- | Any Element is renderable by rendering its contained datatype.
 instance Renderable (Element m r t) where
     type RenderMonad (Element m r t) = m
     type RenderRsrc (Element m r t) = r
@@ -28,6 +34,19 @@ instance Renderable (Element m r t) where
     nameOf (Element a)        = "Element " ++ nameOf a
     composite (Element a) = composite a
 
+-- | A tuple is renderable when it is a pairing of a transform and another
+-- renderable datatype.
+instance ( t ~ RenderTfrm a, Show t, Monoid t
+         , Hashable a, Renderable a) => Renderable (t,a) where
+    type RenderMonad (t,a) = RenderMonad a
+    type RenderTfrm (t,a) = RenderTfrm a
+    type RenderRsrc (t,a) = RenderRsrc a
+    cache rz rs (_,a) = attachIfNeeded rz rs a
+    nameOf (t,a) = "(" ++ show t ++ ", " ++ nameOf a ++ ")"
+    composite (t,a) = map (fmap $ fmap (t <>)) $ composite a
+
+-- | A Maybe is renderable by rendering the datatype contained in the Just
+-- constructor or by rendering nothing.
 instance (Renderable a, Hashable a, Show a) => Renderable (Maybe a) where
     type RenderMonad (Maybe a) = RenderMonad a
     type RenderTfrm (Maybe a) = RenderTfrm a
@@ -39,6 +58,8 @@ instance (Renderable a, Hashable a, Show a) => Renderable (Maybe a) where
     composite (Just a) = composite a
     composite _ = []
 
+-- | A list of renderable instances is renderable by rendering each
+-- instance.
 instance (Renderable a, Hashable a) => Renderable [a] where
     type RenderMonad [a] = RenderMonad a
     type RenderTfrm [a] = RenderTfrm a
@@ -48,18 +69,18 @@ instance (Renderable a, Hashable a) => Renderable [a] where
         where names = map nameOf as
     composite = concatMap composite
 --------------------------------------------------------------------------------
--- Cacheing helpers
+-- Rendering and cacheing
 --------------------------------------------------------------------------------
 -- | Render a datatype using renderings stored in the given cache.
 renderData :: (Monad m, Renderable a, Monoid (RenderTfrm a))
            => Cache m (RenderTfrm a) -> a -> m ()
-renderData cache = renderComposite cache mempty . composite
+renderData c = renderComposite c mempty . composite
 
 -- | Render only the hidden layers of a datatype using renderings stored in
 -- the given cache. This is sometimes useful for debugging.
 renderDataHidden :: (Renderable a, Monad m, Monoid (RenderTfrm a))
                  => Cache m (RenderTfrm a) -> (RenderTfrm a) -> a -> m ()
-renderDataHidden cache t = renderComposite cache t . catMaybes . map f . composite
+renderDataHidden c t = renderComposite c t . catMaybes . map f . composite
     where f (i, Nothing) = Just (i, Just mempty)
           f _ = Nothing
 
@@ -87,25 +108,31 @@ attachIfNeeded rz cache' a =
 -- | Detach any renderings that are not needed to render the
 -- given data.
 detachUnused :: (Monad m, Renderable a) => Cache m t -> a -> m (Cache m t)
-detachUnused cache a =
+detachUnused c a =
     -- Get the hashes listed in the composite (these are used)
     let hashes = S.fromList $ map fst $ composite a
         -- Get the hashes currently in the cache
-        keys = IM.keysSet cache
+        keys = IM.keysSet c
         -- Diff them
-        ks = S.difference keys hashes
+        diff = S.difference keys hashes
         -- Detach them
-    in foldM detach cache $ S.toList keys
+    in foldM detach c $ S.toList diff
 
 -- | Remove a rendering from a cache and clean up the resources allocated
 -- for that rendering.
 detach :: Monad m => Cache m t -> Int -> m (Cache m t)
-detach cache k = do
-    case IM.lookup k cache of
+detach c k = do
+    case IM.lookup k c of
         Nothing        -> let s = "Could not find rendering for " ++ show k
                           in errorWithStackTrace s
         Just rendering -> clean rendering
-    return $ IM.delete k cache
+    return $ IM.delete k c
+--------------------------------------------------------------------------------
+-- Decomposition
+--------------------------------------------------------------------------------
+-- | An instance of Decomposable can be broken down into a number of elements.
+class Decomposable a m r t where
+    decompose :: a -> [Element m r t]
 --------------------------------------------------------------------------------
 -- Element
 --------------------------------------------------------------------------------
@@ -118,6 +145,10 @@ instance Eq (Element m r t) where
 instance Show (Element m r t) where
     show (Element a) = "Element{ " ++ show a ++ " }"
 
+-- | Element is a generic existential type that can be used to enclose
+-- instances of Renderable in order to contain them all in a heterogeneous list.
+-- 'm', 'r' and 't' must be shared with all Renderable instances stored in
+-- a heterogeneous list of Elements.
 data Element m r t where
     Element  :: ( Monad m, Show a, Hashable a, Renderable a
                 , m ~ RenderMonad a
@@ -128,8 +159,13 @@ data Element m r t where
 -- Renderable
 --------------------------------------------------------------------------------
 class Renderable a where
+    -- | The monad needed to render the datatype.  In most cases this is
+    -- probably IO.
     type RenderMonad a :: * -> *
+    -- | The datatype that is used to transform renderings.
     type RenderTfrm a  :: *
+    -- | The datatype that holds cached resources that will be used to
+    -- composite and render the datatype.
     type RenderRsrc a  :: *
     -- | The name of a renderable datatype. This is mostly for debugging.
     nameOf :: a -> String
@@ -158,7 +194,7 @@ data Rendering m t = Rendering { render :: t -> m ()
 
 -- | A composite is a representation of the entire rendered datatype. It is
 -- a flattened list of all the renderings (denoted by hash), along with
--- that renderings local transformation. If a rendering is explicitly run
+-- that rendering\'s local transformation. If a rendering is explicitly run
 -- by another rendering (as in a Renderable class definition) then the
 -- transformation for that rendering should be Nothing, which will keep
 -- 'renderComposite' from running that rendering in addition to the
@@ -170,5 +206,6 @@ data Rendering m t = Rendering { render :: t -> m ()
 -- @
 -- The above is a composite of two renderings, the first will be rendered
 -- by 'renderComposite' using the given transform while the second is
--- effectively "hidden".
+-- effectively hidden but present. Being present in the composite will keep
+-- 'detachUnused' from detaching and cleaning the rendering.
 type Composite a = [(Int, Maybe a)]

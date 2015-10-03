@@ -10,7 +10,7 @@ name:                renderable
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.0.0.1
+version:             0.0.0.2
 
 -- A short (one-line) description of the package.
 synopsis:            Provides a nice API for rendering data types that change
@@ -52,8 +52,12 @@ build-type:          Simple
 -- Constraint on the version of Cabal needed to build this package.
 cabal-version:       >=1.10
 
+source-repository head
+  type:     git
+  location: https://github.com/schell/renderable.git
 
 library
+  ghc-options:         -Wall
   -- Modules exported by the library.
   exposed-modules:     Data.Renderable
 
@@ -61,7 +65,7 @@ library
   -- other-modules:
 
   -- LANGUAGE extensions used by modules in this package.
-  other-extensions:    GADTs, FlexibleContexts, FlexibleInstances
+  other-extensions:    TypeFamilies, GADTs, FlexibleContexts
 
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8 && <4.9,
