@@ -2,3 +2,5 @@
 *.sw[a-z]
 cabal.sandbox.config
 dist
+src/highlight.js
+src/style.css

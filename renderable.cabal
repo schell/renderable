@@ -10,7 +10,7 @@ name:                renderable
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.0.0.2
+version:             0.1.0.0
 
 -- A short (one-line) description of the package.
 synopsis:            Provides a nice API for rendering data types that change
@@ -20,7 +20,7 @@ synopsis:            Provides a nice API for rendering data types that change
 description: Instances of Renderable conform to a simple API that makes their
              visual representations composable through hashing and cacheing.
              Also provided are some convenience functions for writing
-             Renderable instances, as well as top level rendering functions.
+             Renderable instances. Not provided are actual rendering functions.
 
 -- URL for the project homepage or repository.
 homepage:            http://zyghost.com
