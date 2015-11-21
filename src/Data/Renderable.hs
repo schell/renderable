@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Renderable (
     Primitive(..),
@@ -18,6 +19,7 @@ import Control.Arrow (first)
 import Control.Monad
 import Data.Hashable
 import Data.IntMap (IntMap)
+import qualified Data.Foldable as F
 import qualified Data.IntMap as IM
 --------------------------------------------------------------------------------
 -- Primitives
@@ -32,6 +34,11 @@ class Primitive a where
     -- | The datatype that holds cached resources such as references to
     -- windows, shaders, etc.
     type PrimR a :: *
+    -- | Tells whether resources can currently be allocated for the primitive.
+    -- Return False to defer compilation until a later time (the next
+    -- frame).
+    canAllocPrimitive :: PrimR a -> a -> Bool
+    canAllocPrimitive _ _ = True
     -- | Allocate resources for rendering the primitive and return
     -- a monadic call that renders the primitive using a transform. Tuple
     -- that with a call to clean up the allocated resources.
@@ -61,12 +68,12 @@ instance Eq (Element m r t) where
 --------------------------------------------------------------------------------
 -- Compositing
 --------------------------------------------------------------------------------
--- | A 'Composite' is a type that can be broken down into a list of
+-- | A 'Composite' is a type that can be broken down into a collection of
 -- transformed primitives.
-class Composite a m r t where
+class Composite a f m r t where
     -- | Break down a 'Composite' into a heterogeneous list of transformed
     -- primitives.
-    composite :: a -> [(t, Element m r t)]
+    composite :: a -> f (t, Element m r t)
 --------------------------------------------------------------------------------
 -- Rendering
 --------------------------------------------------------------------------------
@@ -87,10 +94,10 @@ findRenderer :: Monad m
              -> (Cache m t, IntMap (Element m r t))
              -> Element m r t
              -> (Cache m t, IntMap (Element m r t))
-findRenderer cache (found, missing) a =
+findRenderer cache (found, missing) (Element a) =
     let k = hash a in
     case IM.lookup k cache of
-        Nothing -> (found, IM.insert k a missing)
+        Nothing -> (found, IM.insert k (Element a) missing)
         Just r  -> (IM.insert k r found, missing)
 
 getRenderer :: (Primitive a, Hashable a, Monad (PrimM a))
@@ -98,9 +105,11 @@ getRenderer :: (Primitive a, Hashable a, Monad (PrimM a))
             -> Cache (PrimM a) (PrimT a)
             -> a
             -> (PrimM a) (Cache (PrimM a) (PrimT a))
-getRenderer rez cache a = do
-    r <- compilePrimitive rez a
-    return $ IM.insert (hash a) r cache
+getRenderer rez cache a =
+    if canAllocPrimitive rez a
+    then do r <- compilePrimitive rez a
+            return $ IM.insert (hash a) r cache
+    else return cache
 
 getElementRenderer :: r -> Cache m t -> Element m r t -> m (Cache m t)
 getElementRenderer rez cache (Element a) = getRenderer rez cache a
@@ -120,13 +129,17 @@ renderElement cache t (Element a) = do
 
 -- | Render a datatype using renderings stored in the given cache, return a
 -- new cache that can be used to render the next datatype.
-renderData :: (Composite a m r t, Hashable a, Monad m, Monoid t)
-           => r -> Cache m t -> a -> m (Cache m t)
-renderData rez cache a = do
+renderData :: forall proxy f a m r t.
+           (Traversable f, Composite a f m r t, Monad m, Monoid t)
+           => r -> Cache m t -> a -> proxy f -> m (Cache m t)
+renderData rez cache a _ = do
         -- comp is a heterogeneous list of all the primitives needed to render
         -- this datatype  'a'.
-    let comp = composite a
-        (found, missing) = foldl (findRenderer cache) (mempty, mempty) $ map snd comp
+    let func = composite :: a -> f (t, Element m r t)
+        comp = func a
+        (found, missing) = foldl (findRenderer cache)
+                                 (mempty, mempty)
+                                 (map snd $ F.toList comp)
         stale = cache `IM.difference` found
 
     -- Clean the stale renderers
@@ -136,6 +149,13 @@ renderData rez cache a = do
     new <- foldM (getElementRenderer rez) mempty $ IM.elems missing
 
     let next = IM.union found new
+
+    --liftIO $ do putStrLn $ "Prev:    " ++ show (IM.keys cache)
+    --            putStrLn $ "Found:   " ++ show (IM.keys found)
+    --            putStrLn $ "Missing: " ++ show (IM.keys missing)
+    --            putStrLn $ "Stale:   " ++ show (IM.keys stale)
+    --            putStrLn $ "Next:    " ++ show (IM.keys next)
+
     -- Render the composite
     mapM_ (uncurry $ renderElement next) comp
     return next
@@ -143,22 +163,24 @@ renderData rez cache a = do
 -- Instances
 --------------------------------------------------------------------------------
 -- | Any Element is a composite of itself if its transform type is a monoid.
-instance Monoid t => Composite (Element m r t) m r t where
-    composite e = [(mempty, e)]
+instance (Monoid t, Applicative f) => Composite (Element m r t) f m r t where
+    composite e = pure (mempty, e)
 
 -- | A tuple is a composite if its right type is a composite and the
--- left type is the transform and the transform is a Monoid. In this case the
+-- left type is the transform and that transform is a monoid. In this case the
 -- result is the right type transformed by the left type.
-instance (Monoid t, Composite a m r t) => Composite (t,a) m r t where
-    composite (t, a) = map (first (mappend t)) $ composite a
+instance (Monoid t, Functor f, Composite a f m r t)
+    => Composite (t,a) f m r t where
+    composite (t, a) = fmap (first (mappend t)) (composite a)
 
--- | A Maybe is a composite if its contained type is composite. The result
--- is is the composite of its contained type or an empty list.
-instance Composite a m r t => Composite (Maybe a) m r t where
+-- | A Maybe is a composite if its contained type is a composite and if the
+-- iteration container is a list. The result is is the composite of its
+-- contained type or an empty list.
+instance Composite a [] m r t => Composite (Maybe a) [] m r t where
     composite (Just a) = composite a
     composite _ = []
 
 -- | A list is a composite by compositing each element and concatenating
 -- the result.
-instance Composite a m r t => Composite [a] m r t where
+instance Composite a [] m r t => Composite [a] [] m r t where
     composite = concatMap composite
