@@ -9,9 +9,13 @@ module Data.Renderable (
     Primitive(..),
     Element(..),
     Composite(..),
+    Renderer,
     Rendering,
+    CleanOp,
     Cache,
-    renderData
+    renderData,
+    emptyRenderer,
+    appendRenderer
 ) where
 
 import Prelude hiding (lookup)
@@ -34,7 +38,7 @@ class Primitive a where
     -- | The datatype that holds cached resources such as references to
     -- windows, shaders, etc.
     type PrimR a :: *
-    -- | Tells whether resources can currently be allocated for the primitive.
+    -- | Return whether resources can currently be allocated for the primitive.
     -- Return False to defer compilation until a later time (the next
     -- frame).
     canAllocPrimitive :: PrimR a -> a -> Bool
@@ -45,7 +49,7 @@ class Primitive a where
     compilePrimitive :: Monad (PrimM a)
                      => PrimR a
                      -> a
-                     -> (PrimM a) (Rendering (PrimM a) (PrimT a))
+                     -> (PrimM a) (Renderer (PrimM a) (PrimT a))
 --------------------------------------------------------------------------------
 -- Element
 --------------------------------------------------------------------------------
@@ -77,17 +81,25 @@ class Composite a f m r t where
 --------------------------------------------------------------------------------
 -- Rendering
 --------------------------------------------------------------------------------
--- | A rendering is a type that contains some effectful computation for
--- displaying something given a transform. It also contains an effectful
--- computation for cleaning up any resources allocated during its creation.
-type Rendering m t = (m (), t -> m ())
+-- | A Rendering is an effectful computation for displaying something given a
+-- transform.
+type Rendering m t = t -> m ()
 
--- | A cache of renderings.
-type Cache m t = IntMap (Rendering m t)
+-- A CleanOp  an effectfull computaton that cleans up any resources allocated
+-- during the creation of an associated Rendering.
+type CleanOp m = m ()
 
-instance Monad m => Monoid (Rendering m t) where
-    (ca, fa) `mappend` (cb, fb) = (ca >> cb, \t -> fa t >> fb t)
-    mempty = (return (), const $ return ())
+-- A Renderer is the pairing of a Rendering and a Cleanup.
+type Renderer m t = (CleanOp m, Rendering m t)
+
+emptyRenderer :: Monad m => Renderer m t
+emptyRenderer = (return (), const $ return ())
+
+appendRenderer :: Monad m => Renderer m t -> Renderer m t -> Renderer m t
+appendRenderer (c1,r1) (c2,r2) = (c1 >> c2, \t -> r1 t >> r2 t)
+
+-- | A cache of renderers.
+type Cache m t = IntMap (Renderer m t)
 
 findRenderer :: Monad m
              => Cache m t
@@ -114,10 +126,10 @@ getRenderer rez cache a =
 getElementRenderer :: r -> Cache m t -> Element m r t -> m (Cache m t)
 getElementRenderer rez cache (Element a) = getRenderer rez cache a
 
-clean :: Rendering m t -> m ()
+clean :: Renderer m t -> m ()
 clean = fst
 
-render :: Rendering m t -> t -> m ()
+render :: Renderer m t -> t -> m ()
 render = snd
 
 renderElement :: Monad m => Cache m t -> t -> Element m r t -> m ()
