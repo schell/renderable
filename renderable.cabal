@@ -10,11 +10,11 @@ name:                renderable
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.1.0.0
+version:             0.2.0.0
 
 -- A short (one-line) description of the package.
-synopsis:            Provides a nice API for rendering data types that change
-                     over time.
+synopsis:            Provides an API for allocating and maintaining resources
+                     related to rendering data types that change over time.
 
 -- A longer description of the package.
 description: Instances of Renderable conform to a simple API that makes their
