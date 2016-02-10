@@ -11,13 +11,17 @@ module Data.Renderable (
     Rendering,
     CleanOp,
     Cache,
-    renderPrimitives,
+    CacheStats(..),
+    renderPrims,
+    renderPrimsDebug,
+    renderPrimsWithStats,
     emptyRenderer,
     appendRenderer
 ) where
 
 import Prelude hiding (lookup)
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Hashable
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
@@ -104,13 +108,44 @@ renderElement cache t a = do
         Nothing -> return ()
         Just r  -> render r t
 
+-- | A sum of lists of rendering hashes between two cache states. 
+-- Used for debugging resource management.
+data CacheStats = CacheStats { cachedPrev    :: [Int]
+                             -- ^ All the keys of the previous cache state. 
+                             , cachedFound   :: [Int]
+                             -- ^ The keys needed for the next state that
+                             -- were found in the previous cache (no need
+                             -- to allocate).
+                             , cachedMissing :: [Int]
+                             -- ^ The keys needed for the next state that
+                             -- were not found in the previous cache (these
+                             -- will need allocating).
+                             , cachedStale   :: [Int]
+                             -- ^ The keys found in the previous cache that
+                             -- are not needed for the next state (these
+                             -- can be deallocated).
+                             , cachedNext    :: [Int] 
+                             -- ^ All the keys of the next cache state.
+                             }
+
+-- | Map a 'CacheStats' into a nice readable string.
+showCacheStats :: CacheStats -> String
+showCacheStats (CacheStats cache found missing stale next) = unlines
+    [ "Prev:    " ++ show (IM.keys cache) 
+    , "Found:   " ++ show (IM.keys found) 
+    , "Missing: " ++ show (IM.keys missing) 
+    , "Stale:   " ++ show (IM.keys stale) 
+    , "Next:    " ++ show (IM.keys next)
+    ]
+
 -- | Render a list of primitives using renderings stored in the given cache,
 -- return a new cache that can be used to render the next list of
--- primitives.
-renderPrimitives :: (Primitive a, Monad (PrimM a), Monoid (PrimT a), Hashable a)
-                 => PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)]
-                 -> (PrimM a) (Cache (PrimM a) (PrimT a))
-renderPrimitives rez cache prims = do
+-- primitives, along with some info about the comparison of the given and
+-- returned cache. 
+renderPrimsWithStats :: (Primitive a, Monad (PrimM a), Monoid (PrimT a), Hashable a) 
+                     => PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)] 
+                     -> (PrimM a) (Cache (PrimM a) (PrimT a), CacheStats)
+renderPrimsWithStats rez cache prims = do
     let (found, missing) = foldl (findRenderer cache)
                                  (mempty, mempty)
                                  (map snd prims)
@@ -123,13 +158,33 @@ renderPrimitives rez cache prims = do
     new <- foldM (getRenderer rez) mempty $ IM.elems missing
 
     let next = IM.union found new
-
-    --liftIO $ do putStrLn $ "Prev:    " ++ show (IM.keys cache)
-    --            putStrLn $ "Found:   " ++ show (IM.keys found)
-    --            putStrLn $ "Missing: " ++ show (IM.keys missing)
-    --            putStrLn $ "Stale:   " ++ show (IM.keys stale)
-    --            putStrLn $ "Next:    " ++ show (IM.keys next)
+        stats = CacheStats { cachedPrev = IM.keys cache
+                           , cachedFound = IM.keys found
+                           , cachedMissing = IM.keys missing
+                           , cachedStale = IM.keys stale
+                           , cachedNext = IM.keys next
+                           }
 
     -- Render the composite
     mapM_ (uncurry $ renderElement next) prims
+    return (next,stats)
+
+-- | Render a list of primitives using renderings stored in the given cache,
+-- return a new cache that can be used to render the next list of
+-- primitives. Optionally print some debug info.
+renderPrimsDebug :: (Primitive a, MonadIO (PrimM a), Monoid (PrimT a), Hashable a) 
+                 => Bool 
+                 -> PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)] 
+                 -> (PrimM a) (Cache (PrimM a) (PrimT a))
+renderPrimsDebug debug rez cache prims = do
+    (next, stats) <- renderPrimsWithStats rez cache prims
+    when debug $ putStrLn $ showCacheStats stats
     return next
+
+-- | Render a list of primitives using renderings stored in the given cache,
+-- return a new cache that can be used to render the next list of
+-- primitives.
+renderPrims :: (Primitive a, Monad (PrimM a), Monoid (PrimT a), Hashable a)
+                 => PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)]
+                 -> (PrimM a) (Cache (PrimM a) (PrimT a))
+renderPrims = fst <$> renderPrimsWithStats
