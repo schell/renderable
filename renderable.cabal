@@ -17,8 +17,8 @@ synopsis:            Provides an API for allocating and maintaining resources
                      related to rendering data types that change over time.
 
 -- A longer description of the package.
-description: Instances of Renderable conform to a simple API that makes their
-             visual representations composable through hashing and cacheing.
+description: Instances of Renderable conform to a simple API that makes 
+             frame-based graphical resource management easy.
              Also provided are some convenience functions for writing
              Renderable instances. Not provided are actual rendering functions.
 
