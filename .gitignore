@@ -4,3 +4,4 @@ cabal.sandbox.config
 dist
 src/highlight.js
 src/style.css
+.stack-work/

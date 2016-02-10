@@ -110,32 +110,32 @@ renderElement cache t a = do
 
 -- | A sum of lists of rendering hashes between two cache states. 
 -- Used for debugging resource management.
-data CacheStats = CacheStats { cachedPrev    :: [Int]
-                             -- ^ All the keys of the previous cache state. 
-                             , cachedFound   :: [Int]
-                             -- ^ The keys needed for the next state that
-                             -- were found in the previous cache (no need
-                             -- to allocate).
-                             , cachedMissing :: [Int]
-                             -- ^ The keys needed for the next state that
-                             -- were not found in the previous cache (these
-                             -- will need allocating).
-                             , cachedStale   :: [Int]
-                             -- ^ The keys found in the previous cache that
-                             -- are not needed for the next state (these
-                             -- can be deallocated).
-                             , cachedNext    :: [Int] 
-                             -- ^ All the keys of the next cache state.
-                             }
+data CacheStats a = CacheStats { cachedPrev    :: [Int]
+                               -- ^ All the keys of the previous cache state. 
+                               , cachedFound   :: [Int]
+                               -- ^ The keys needed for the next state that
+                               -- were found in the previous cache (no need
+                               -- to allocate).
+                               , cachedMissing :: [Int]
+                               -- ^ The keys needed for the next state that
+                               -- were not found in the previous cache (these
+                               -- will need allocating).
+                               , cachedStale   :: [Int]
+                               -- ^ The keys found in the previous cache that
+                               -- are not needed for the next state (these
+                               -- can be deallocated).
+                               , cachedNext    :: [Int] 
+                               -- ^ All the keys of the next cache state.
+                               }
 
 -- | Map a 'CacheStats' into a nice readable string.
-showCacheStats :: CacheStats -> String
+showCacheStats :: CacheStats a -> String
 showCacheStats (CacheStats cache found missing stale next) = unlines
-    [ "Prev:    " ++ show (IM.keys cache) 
-    , "Found:   " ++ show (IM.keys found) 
-    , "Missing: " ++ show (IM.keys missing) 
-    , "Stale:   " ++ show (IM.keys stale) 
-    , "Next:    " ++ show (IM.keys next)
+    [ "Prev:    " ++ show cache
+    , "Found:   " ++ show found 
+    , "Missing: " ++ show missing
+    , "Stale:   " ++ show stale
+    , "Next:    " ++ show next
     ]
 
 -- | Render a list of primitives using renderings stored in the given cache,
@@ -144,7 +144,7 @@ showCacheStats (CacheStats cache found missing stale next) = unlines
 -- returned cache. 
 renderPrimsWithStats :: (Primitive a, Monad (PrimM a), Monoid (PrimT a), Hashable a) 
                      => PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)] 
-                     -> (PrimM a) (Cache (PrimM a) (PrimT a), CacheStats)
+                     -> (PrimM a) (Cache (PrimM a) (PrimT a), CacheStats a)
 renderPrimsWithStats rez cache prims = do
     let (found, missing) = foldl (findRenderer cache)
                                  (mempty, mempty)
@@ -178,13 +178,13 @@ renderPrimsDebug :: (Primitive a, MonadIO (PrimM a), Monoid (PrimT a), Hashable 
                  -> (PrimM a) (Cache (PrimM a) (PrimT a))
 renderPrimsDebug debug rez cache prims = do
     (next, stats) <- renderPrimsWithStats rez cache prims
-    when debug $ putStrLn $ showCacheStats stats
+    when debug $ liftIO $ putStrLn $ showCacheStats stats
     return next
 
 -- | Render a list of primitives using renderings stored in the given cache,
 -- return a new cache that can be used to render the next list of
 -- primitives.
 renderPrims :: (Primitive a, Monad (PrimM a), Monoid (PrimT a), Hashable a)
-                 => PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)]
-                 -> (PrimM a) (Cache (PrimM a) (PrimT a))
-renderPrims = fst <$> renderPrimsWithStats
+            => PrimR a -> Cache (PrimM a) (PrimT a) -> [(PrimT a, a)]
+            -> (PrimM a) (Cache (PrimM a) (PrimT a))
+renderPrims rez cache prims = fst <$> renderPrimsWithStats rez cache prims
