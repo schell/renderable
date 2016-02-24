@@ -19,25 +19,30 @@ import Data.Hashable
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 --------------------------------------------------------------------------------
--- Primitives
+-- A strategy for rendering
 --------------------------------------------------------------------------------
--- | A 'Primitive' is the smallest thing can can be rendered in your graphics
--- system. Some examples are points, lines, triangles and other shapes.
----- | The monad in which rendering calls will take place.
-    -- | The type of the graphics transformation.
-    -- | The datatype that holds cached resources such as references to
-    -- windows, shaders, etc.
-
+-- | A 'RenderStrategy' is a method for creating a renderer that can render
+-- your primitives. Examples of primitives are are points, lines, triangles and
+-- other shapes. A 'RenderStrategy' is parameterized by four types -
+--
+-- @m@ - the monad in which rendering calls will take place.
+--
+-- @t@ - type of the graphics transformation that can be applied to the
+--       renderer
+--
+-- @r@ - type that holds static resources such as windows, shaders, etc.
+--
+-- @a@ - type of the primitive that can be renderered.
 data RenderStrategy m t r a = RenderStrategy
     { canAllocPrimitive :: r -> a -> Bool
-      -- ^ Return whether resources can currently be allocated for the primitive.
-      -- Return False to defer compilation until a later time (the next
+      -- ^ Determines whether a renderer can be allocated for the primitive.
+      -- A result of 'False' will defer compilation until a later time (the next
       -- frame).
 
     , compilePrimitive :: r -> a -> m (Renderer m t)
-      -- ^ Allocate resources for rendering the primitive and return
-      -- a monadic call that renders the primitive using a transform. Tuple
-      -- that with a call to clean up the allocated resources.
+      -- ^ Allocates resources for rendering the primitive and return
+      -- a monadic call that renders the primitive using a transform.
+      -- Tuples that with a call to clean up the allocated resources.
     }
 --------------------------------------------------------------------------------
 -- Rendering
@@ -46,16 +51,18 @@ data RenderStrategy m t r a = RenderStrategy
 -- transform.
 type Rendering m t = t -> m ()
 
--- A CleanOp is an effectfull computaton that cleans up any resources allocated
--- during the creation of an associated Rendering.
+-- | A CleanOp is an effectfull computaton that cleans up any resources
+-- allocated during the creation of an associated Rendering.
 type CleanOp m = m ()
 
--- A Renderer is the pairing of a Rendering and a Cleanup.
+-- | A Renderer is the pairing of a Rendering and a Cleanup.
 type Renderer m t = (CleanOp m, Rendering m t)
 
+-- | Create a renderer that renders nothing and releases no resources.
 emptyRenderer :: Monad m => Renderer m t
 emptyRenderer = (return (), const $ return ())
 
+-- | Appends two renderers into one.
 appendRenderer :: Monad m => Renderer m t -> Renderer m t -> Renderer m t
 appendRenderer (c1,r1) (c2,r2) = (c1 >> c2, \t -> r1 t >> r2 t)
 
