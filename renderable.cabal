@@ -13,17 +13,21 @@ name:                renderable
 version:             0.2.0.0
 
 -- A short (one-line) description of the package.
-synopsis:            Provides an API for allocating and maintaining resources
-                     related to rendering data types that change over time.
+synopsis:            An API for managing renderable resources.
 
 -- A longer description of the package.
-description: Instances of Renderable conform to a simple API that makes 
-             frame-based graphical resource management easy.
-             Also provided are some convenience functions for writing
-             Renderable instances. Not provided are actual rendering functions.
+description: The `renderable` package provides a method for managing resources
+    of a rendering system. Resources are allocated according to a strategy and
+    released automatically when your renderable data changes. These changes are
+    detected during each draw call based on the hash of your renderable
+    datatype.
+
+    This package is meant to be pulled in as a portion of your rendering system.
+    It aims to ease the task of managing allocation of resources over time as
+    the value of your renderable datatype changes.
 
 -- URL for the project homepage or repository.
-homepage:            http://zyghost.com
+homepage:            https://github.com/schell/renderable
 
 -- The license under which the package is released.
 license:             MIT
@@ -36,7 +40,7 @@ author:              Schell Scivally
 
 -- An email address to which users can send suggestions, bug reports, and
 -- patches.
-maintainer:          efsubenovex@gmail.com
+maintainer:          schell.scivally@synapsegroup.com
 
 -- A copyright notice.
 -- copyright:
@@ -65,7 +69,7 @@ library
   -- other-modules:
 
   -- LANGUAGE extensions used by modules in this package.
-  other-extensions:    TypeFamilies, GADTs, FlexibleContexts
+  other-extensions:
 
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8 && <4.9,
