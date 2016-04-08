@@ -1,9 +1,5 @@
 - patterns:
-  - .*\.html$
+  - .*\.hs$
   commands:
-  - echo \0
-#- patterns:
-#  - .*\.hs$
-#  commands:
-#  - stack build
-#  - hlint \0
+  - stack build
+  - hlint \0

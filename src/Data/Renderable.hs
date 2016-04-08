@@ -17,6 +17,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Hashable
 import Data.IntMap (IntMap)
+import Data.Foldable (foldl')
 import qualified Data.IntMap as IM
 --------------------------------------------------------------------------------
 -- A strategy for rendering
@@ -136,9 +137,9 @@ renderPrimsWithStats :: (Monad m, Monoid t, Hashable a)
                      => RenderStrategy m t r a -> r -> Cache m t -> [(t, a)]
                      -> m (Cache m t, CacheStats a)
 renderPrimsWithStats s rez cache prims = do
-    let (found, missing) = foldl (findRenderer cache)
-                                 (mempty, mempty)
-                                 (map snd prims)
+    let (found, missing) = foldl' (findRenderer cache)
+                                  (mempty, mempty)
+                                  (map snd prims)
         stale = cache `IM.difference` found
 
     -- Clean the stale renderers
