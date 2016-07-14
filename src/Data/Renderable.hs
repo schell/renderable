@@ -13,8 +13,10 @@ module Data.Renderable (
 ) where
 
 import Prelude hiding (lookup)
+import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
+import Data.Monoid
 import Data.Hashable
 import Data.IntMap (IntMap)
 import Data.Foldable (foldl')
