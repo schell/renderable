@@ -18,6 +18,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Monoid
 import Data.Hashable
+import qualified Data.Traversable as T
 import Data.IntMap (IntMap)
 import Data.Foldable (foldl')
 import qualified Data.IntMap as IM
@@ -135,7 +136,7 @@ showCacheStats (CacheStats cache found missing stale next) = unlines
 -- return a new cache that can be used to render the next list of
 -- primitives, along with some info about the comparison of the given and
 -- returned cache.
-renderPrimsWithStats :: (Monad m, Monoid t, Hashable a)
+renderPrimsWithStats :: (Functor m, Monad m, Monoid t, Hashable a)
                      => RenderStrategy m t r a -> r -> Cache m t -> [(t, a)]
                      -> m (Cache m t, CacheStats a)
 renderPrimsWithStats s rez cache prims = do
@@ -145,7 +146,7 @@ renderPrimsWithStats s rez cache prims = do
         stale = cache `IM.difference` found
 
     -- Clean the stale renderers
-    sequence_ $ fmap clean stale
+    void $ T.sequence $ fmap clean stale
 
     -- Get the missing renderers
     new <- foldM (getRenderer s rez) mempty $ IM.elems missing
@@ -165,7 +166,7 @@ renderPrimsWithStats s rez cache prims = do
 -- | Render a list of primitives using renderings stored in the given cache,
 -- return a new cache that can be used to render the next list of
 -- primitives. Optionally print some debug info.
-renderPrimsDebug :: (MonadIO m, Monoid t, Hashable a)
+renderPrimsDebug :: (Functor m, MonadIO m, Monoid t, Hashable a)
                  => Bool -> RenderStrategy m t r a -> r -> Cache m t -> [(t, a)]
                  -> m (Cache m t)
 renderPrimsDebug debug s rez cache prims = do
@@ -176,7 +177,7 @@ renderPrimsDebug debug s rez cache prims = do
 -- | Render a list of primitives using renderings stored in the given cache,
 -- return a new cache that can be used to render the next list of
 -- primitives.
-renderPrims :: (Monad m, Monoid t, Hashable a)
+renderPrims :: (Functor m, Monad m, Monoid t, Hashable a)
             => RenderStrategy m t r a -> r -> Cache m t -> [(t, a)]
             -> m (Cache m t)
 renderPrims s rez cache prims = fst <$> renderPrimsWithStats s rez cache prims

@@ -75,7 +75,7 @@ library
   build-depends:       base >=4.6 && <5.0
                      , containers >= 0.5
                      , hashable >= 1.2
-                     , transformers >= 0.4
+                     , transformers >= 0.3
 
   -- Directories containing source files.
   hs-source-dirs:      src
